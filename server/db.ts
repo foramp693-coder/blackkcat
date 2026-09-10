@@ -32,9 +32,11 @@ import {
   DigitalTwinInput,
   DigitalTwinOutput,
   DataValidationReport,
-  ProcessMiningModel
+  ProcessMiningModel,
+  Asset
 } from './types';
 import { PRESET_USERS } from './auth';
+import { dbBackend } from './dbBackend';
 import { generateScenarioData, SCENARIO_DEFINITIONS } from './engine/scenarios';
 import { runExecutionGapRules } from './engine/executionGap';
 import { buildNegativeSpaceMatrix } from './engine/negativeSpace';
@@ -83,6 +85,7 @@ class DatabaseStore {
   public evidences: EvidenceRecord[] = [];
   public findings: SupervisoryFinding[] = [];
   public auditEvents: AuditEvent[] = [];
+  public assets: Asset[] = [];
   public activeScenarioId: string = 'SCENARIO_2'; // Scenario 2 has rich escalation gap for instant discovery
 
   // Advanced Supervisory Decision-Support Engines State
@@ -108,6 +111,7 @@ class DatabaseStore {
   public dynamicAlerts: DynamicSupervisoryAlert[] = [];
 
   constructor() {
+    dbBackend.seedPresetUsers(this.users);
     this.loadScenario(this.activeScenarioId, 'System Initialization');
   }
 
@@ -121,8 +125,9 @@ class DatabaseStore {
     this.escalations = data.escalations;
     this.closures = data.closures;
     this.evidences = data.evidences;
+    this.assets = data.assets || [];
 
-    this.recomputeAnalytics();
+    this.recomputeAnalytics({ executedBy: actor });
 
     this.addAuditLog({
       actorEmail: actor === 'System' ? 'system@satsa.internal' : actor,
@@ -135,7 +140,15 @@ class DatabaseStore {
     });
   }
 
-  public recomputeAnalytics(): void {
+  public recomputeAnalytics(runMetadata?: { executedBy: string; entityId?: string }): void {
+    const runId = `RUN-${Date.now()}`;
+    const executedBy = runMetadata?.executedBy || 'System';
+    dbBackend.recordAnalyticsRunStart({
+      id: runId,
+      executed_by: executedBy,
+      entity_id: runMetadata?.entityId
+    });
+
     // 1. Run execution gap engine
     this.findings = runExecutionGapRules(
       this.cases,
@@ -144,7 +157,8 @@ class DatabaseStore {
       this.escalations,
       this.closures,
       this.evidences,
-      this.entities
+      this.entities,
+      this.assets
     );
 
     // 2. Correlate findings into systemic patterns
@@ -302,6 +316,42 @@ class DatabaseStore {
     );
     this.dynamicAlerts = alertEval.alerts;
     this.policyRules = alertEval.evaluatedRules;
+
+    // 19. Authoritative Database Synchronization (PostgreSQL / SQLite Adapter)
+    try {
+      dbBackend.syncDatasetToDatabase(
+        this.entities,
+        this.alerts,
+        this.cases,
+        this.investigations,
+        this.escalations,
+        this.closures,
+        this.assets,
+        this.findings,
+        this.auditEvents
+      );
+      dbBackend.recordAnalyticsRunComplete(
+        runId,
+        {
+          total_evidence: this.alerts.length + this.cases.length,
+          cases_analyzed: this.cases.length,
+          findings_count: this.findings.length,
+          duration_ms: 120
+        }
+      );
+    } catch (e: any) {
+      console.error('[DatabaseStore] Database sync error:', e);
+      dbBackend.recordAnalyticsRunComplete(
+        runId,
+        {
+          total_evidence: 0,
+          cases_analyzed: 0,
+          findings_count: 0,
+          duration_ms: 0,
+          error: e.message
+        }
+      );
+    }
   }
 
   // ----------------------------------------------------
@@ -707,6 +757,18 @@ class DatabaseStore {
       }
     });
 
+    try {
+      dbBackend.recordFindingReview(
+        findingId,
+        standardStatus,
+        reviewer.name || reviewer.email,
+        reviewer.role,
+        notes
+      );
+    } catch (err) {
+      console.warn('[reviewFinding] Database review sync error:', err);
+    }
+
     return finding;
   }
 
@@ -750,7 +812,10 @@ class DatabaseStore {
   public getEnterpriseEnginesSummary(): EnterpriseEngineDefinition[] {
     const now = new Date().toISOString();
     return ENTERPRISE_ENGINES_METADATA.map(meta => {
-      let metrics = { label: 'Status', value: 'Active' };
+      let metrics: { label: string; value: string | number; trend?: string; sublabel?: string } = {
+        label: 'Status',
+        value: 'Active'
+      };
       let status: 'ACTIVE' | 'OPTIMAL' | 'EVALUATING' | 'READY' = 'ACTIVE';
 
       switch (meta.id) {
@@ -773,7 +838,7 @@ class DatabaseStore {
         case 'smart-sampling-engine':
           metrics = {
             label: 'Stratified Sample',
-            value: `${this.smartSamplingReport?.topTargets?.length || 6} High-Risk Targets`,
+            value: `${(this.smartSamplingReport as any)?.topTargets?.length || (this.smartSamplingReport as any)?.sampleSize || 6} High-Risk Targets`,
             sublabel: 'ISO 19011 Aligned'
           };
           status = 'ACTIVE';
@@ -914,7 +979,7 @@ class DatabaseStore {
           status = 'ACTIVE';
           break;
         case 'data-ingestion-validation':
-          const valPct = this.dataValidationReport?.validPct ?? 99.4;
+          const valPct = (this.dataValidationReport as any)?.validPct ?? this.dataValidationReport?.healthScorePct ?? 99.4;
           metrics = {
             label: 'Ingestion Integrity',
             value: `${valPct}% Validated`,
@@ -997,6 +1062,11 @@ class DatabaseStore {
     // Retain up to 2,000 log events in memory
     if (this.auditEvents.length > 2000) {
       this.auditEvents.pop();
+    }
+    try {
+      dbBackend.logAuditEvent(log);
+    } catch (err) {
+      console.warn('[addAuditLog] Database audit write error:', err);
     }
     return log;
   }

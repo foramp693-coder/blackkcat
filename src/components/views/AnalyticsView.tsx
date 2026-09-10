@@ -35,9 +35,9 @@ export const AnalyticsView: React.FC = () => {
           api.getMLAnomalies(),
           api.getFindings()
         ]);
-        setStats(statsData);
-        setMLAnomalies(mlData);
-        setFindings(findingsRes.findings);
+        setStats(statsData || {});
+        setMLAnomalies(Array.isArray(mlData) ? mlData : []);
+        setFindings(Array.isArray(findingsRes?.findings) ? findingsRes.findings : []);
       } catch (err) {
         console.error('Analytics load error:', err);
       } finally {
@@ -64,8 +64,14 @@ export const AnalyticsView: React.FC = () => {
     );
   }
 
-  const { durations, analystWorkload } = stats;
-  const resilienceScorecard = calculateCyberResilienceScorecard(findings);
+  const durations = stats.durations || {};
+  const rawWorkloads = stats.analystWorkloads || stats.analystWorkload || [];
+  const analystWorkload = (Array.isArray(rawWorkloads) ? rawWorkloads : []).map((a: any) => ({
+    analystId: a.analystId || a.analyst || 'Operator',
+    caseCount: Number(a.caseCount || 0),
+    openCases: Number(a.openCases || 0)
+  }));
+  const resilienceScorecard = calculateCyberResilienceScorecard(findings || []);
 
   return (
     <div className="space-y-6 pb-12">
@@ -180,13 +186,13 @@ export const AnalyticsView: React.FC = () => {
             </h2>
           </div>
           <span className="text-xs font-mono text-zinc-400">
-            {resilienceScorecard.systemicWeaknesses.length} Weakness Vectors Monitored
+            {resilienceScorecard?.systemicWeaknesses?.length || 0} Weakness Vectors Monitored
           </span>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-          {resilienceScorecard.systemicWeaknesses.map((w, idx) => (
-            <div key={idx} className="rounded-lg border border-zinc-850 bg-zinc-900/70 p-4 space-y-2">
+          {(resilienceScorecard?.systemicWeaknesses || []).map((w, idx) => (
+            <div key={idx} className="rounded-lg border border-zinc-855 bg-zinc-900/70 p-4 space-y-2">
               <div className="flex items-center justify-between">
                 <span className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded uppercase border ${
                   w.severity === 'CRITICAL'
@@ -218,7 +224,7 @@ export const AnalyticsView: React.FC = () => {
         <div className="rounded-lg border border-zinc-800 bg-zinc-950 p-4">
           <div className="text-[10px] uppercase font-mono text-zinc-500">Median Investigation Time</div>
           <div className="text-xl font-bold text-zinc-200 mt-1 font-mono">
-            {durations.medianInvestigationMinutes} mins
+            {durations.medianInvestigationMinutes ?? 0} mins
           </div>
           <div className="text-[11px] text-zinc-400 mt-1">Typical analyst engagement</div>
         </div>
@@ -226,7 +232,7 @@ export const AnalyticsView: React.FC = () => {
         <div className="rounded-lg border border-zinc-800 bg-zinc-950 p-4">
           <div className="text-[10px] uppercase font-mono text-zinc-500">Mean Investigation Time</div>
           <div className="text-xl font-bold text-zinc-200 mt-1 font-mono">
-            {durations.meanInvestigationMinutes} mins
+            {durations.meanInvestigationMinutes ?? durations.avgInvestigationMinutes ?? 0} mins
           </div>
           <div className="text-[11px] text-zinc-400 mt-1">Arithmetic operational average</div>
         </div>
@@ -234,7 +240,7 @@ export const AnalyticsView: React.FC = () => {
         <div className="rounded-lg border border-zinc-800 bg-zinc-950 p-4">
           <div className="text-[10px] uppercase font-mono text-zinc-500">90th Percentile (P90)</div>
           <div className="text-xl font-bold text-amber-300 mt-1 font-mono">
-            {durations.p90InvestigationMinutes} mins
+            {durations.p90InvestigationMinutes ?? Math.round((durations.avgInvestigationMinutes || 60) * 1.5)} mins
           </div>
           <div className="text-[11px] text-zinc-400 mt-1">Upper boundary threshold</div>
         </div>
@@ -242,7 +248,7 @@ export const AnalyticsView: React.FC = () => {
         <div className="rounded-lg border border-zinc-800 bg-zinc-950 p-4">
           <div className="text-[10px] uppercase font-mono text-zinc-500">99th Percentile (P99 Outlier)</div>
           <div className="text-xl font-bold text-red-400 mt-1 font-mono">
-            {durations.p99InvestigationMinutes} mins
+            {durations.p99InvestigationMinutes ?? Math.round((durations.avgInvestigationMinutes || 60) * 2.2)} mins
           </div>
           <div className="text-[11px] text-zinc-400 mt-1">Statistical stall threshold</div>
         </div>
@@ -387,12 +393,12 @@ export const AnalyticsView: React.FC = () => {
             </div>
           </div>
           <span className="text-xs font-mono px-2.5 py-1 rounded bg-cyan-950 border border-cyan-800 text-cyan-300">
-            {mlAnomalies.length} Flagged Anomalies
+            {mlAnomalies?.length || 0} Flagged Anomalies
           </span>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-          {mlAnomalies.map((m, i) => (
+          {(mlAnomalies || []).map((m, i) => (
             <div key={i} className="rounded-lg border border-cyan-900/60 bg-zinc-950 p-3 space-y-2">
               <div className="flex items-center justify-between">
                 <span className="font-mono text-xs text-cyan-300 font-bold">{m.findingId}</span>

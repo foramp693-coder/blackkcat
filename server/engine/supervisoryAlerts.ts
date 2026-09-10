@@ -121,7 +121,7 @@ export function evaluateDynamicSupervisoryAlerts(
       const esc = escalations.find(e => e.caseId === c.id);
       const ent = entities.find(e => e.id === c.entityId);
       const isMissingEsc = !esc;
-      const isDelayedEsc = esc && esc.escalationDelayMinutes && esc.escalationDelayMinutes > 30;
+      const isDelayedEsc = esc && esc.delayMinutesFromAlert && esc.delayMinutesFromAlert > 30;
 
       if (isMissingEsc || isDelayedEsc) {
         ruleCounts['POL-ESC-01'] = (ruleCounts['POL-ESC-01'] || 0) + 1;
@@ -130,7 +130,7 @@ export function evaluateDynamicSupervisoryAlerts(
           timestamp: c.createdAt,
           severity: 'CRITICAL',
           title: isMissingEsc ? 'Unescalated Critical Incident Breach' : 'Escalation SLA Delay Threshold Exceeded',
-          entityName: ent?.name || c.entityName || 'Critical Infrastructure Entity',
+          entityName: ent?.name || 'Critical Infrastructure Entity',
           entityId: c.entityId,
           caseNumber: c.caseNumber,
           caseId: c.id,
@@ -138,11 +138,11 @@ export function evaluateDynamicSupervisoryAlerts(
           ruleName: escRule.name,
           description: isMissingEsc
             ? `Critical case ${c.caseNumber} was never escalated to Tier 2/Incident Commander.`
-            : `Escalation took ${esc?.escalationDelayMinutes} minutes, breaching the 30-minute statutory mandate.`,
+            : `Escalation took ${esc?.delayMinutesFromAlert} minutes, breaching the 30-minute statutory mandate.`,
           acknowledged: false,
           statutoryMandate: escRule.statutoryMandate,
-          evidenceSummary: `Case Severity: CRITICAL | Target: 30 mins | Actual: ${esc?.escalationDelayMinutes ?? 'Never Escalated'}`,
-          metricValue: `${esc?.escalationDelayMinutes ?? 'N/A'} mins`
+          evidenceSummary: `Case Severity: CRITICAL | Target: 30 mins | Actual: ${esc?.delayMinutesFromAlert ?? 'Never Escalated'}`,
+          metricValue: `${esc?.delayMinutesFromAlert ?? 'N/A'} mins`
         });
       }
     }
@@ -155,24 +155,24 @@ export function evaluateDynamicSupervisoryAlerts(
     for (const c of highCritCases) {
       const cl = closures.find(item => item.caseId === c.id);
       const ent = entities.find(e => e.id === c.entityId);
-      if (cl && (cl.evidenceCount === 0 || !cl.evidenceCount)) {
+      if (cl && (!cl.approvedBySupervisor || cl.classification === 'INCONCLUSIVE')) {
         ruleCounts['POL-CLS-03'] = (ruleCounts['POL-CLS-03'] || 0) + 1;
         dynamicAlerts.push({
           id: `ALT-CLS-${c.id}`,
-          timestamp: cl.closedAt || c.updatedAt,
+          timestamp: cl.closedAt || c.createdAt,
           severity: 'HIGH',
           title: 'Premature Incident Closure Without Forensic Evidence',
-          entityName: ent?.name || c.entityName || 'Critical Infrastructure Entity',
+          entityName: ent?.name || 'Critical Infrastructure Entity',
           entityId: c.entityId,
           caseNumber: c.caseNumber,
           caseId: c.id,
           ruleCode: 'POL-CLS-03',
           ruleName: clsRule.name,
-          description: `Case ${c.caseNumber} closed by analyst ${cl.closedBy} with 0 attached forensic evidence artifacts.`,
+          description: `Case ${c.caseNumber} closed by analyst ${cl.closedBy} with unapproved/inconclusive classification.`,
           acknowledged: false,
           statutoryMandate: clsRule.statutoryMandate,
-          evidenceSummary: `Attached Artifacts: 0 | Required: ≥ 2 | Closure Reason: ${cl.closureReason || 'N/A'}`,
-          metricValue: '0 artifacts'
+          evidenceSummary: `Justification: ${cl.justification || 'N/A'} | Classification: ${cl.classification}`,
+          metricValue: cl.classification
         });
       }
     }
@@ -185,7 +185,7 @@ export function evaluateDynamicSupervisoryAlerts(
       const c = cases.find(item => item.id === inv.caseId);
       if (!c) continue;
       const ent = entities.find(e => e.id === c.entityId);
-      const notes = inv.investigationNotes || '';
+      const notes = inv.findingsNotes || inv.notes || '';
       const isShort = notes.length < 50;
       const isBoilerplate = notes.toLowerCase().includes('routine false positive') || notes.toLowerCase().includes('no further action required') || notes.toLowerCase().includes('closed per standard procedure');
 
@@ -196,13 +196,13 @@ export function evaluateDynamicSupervisoryAlerts(
           timestamp: inv.completedAt || c.createdAt,
           severity: 'MEDIUM',
           title: 'Investigation Notes Quality Deficiency',
-          entityName: ent?.name || c.entityName || 'Critical Infrastructure Entity',
+          entityName: ent?.name || 'Critical Infrastructure Entity',
           entityId: c.entityId,
           caseNumber: c.caseNumber,
           caseId: c.id,
           ruleCode: 'POL-TRG-04',
           ruleName: nlpRule.name,
-          description: `Analyst ${inv.analystName} submitted boilerplate/abbreviated investigation notes without thorough qualitative findings.`,
+          description: `Analyst ${inv.analyst || inv.analystId} submitted boilerplate/abbreviated investigation notes without thorough qualitative findings.`,
           acknowledged: false,
           statutoryMandate: nlpRule.statutoryMandate,
           evidenceSummary: `Notes Length: ${notes.length} chars | Notes Sample: "${notes.slice(0, 70)}..."`,
@@ -224,7 +224,7 @@ export function evaluateDynamicSupervisoryAlerts(
         timestamp: c.createdAt,
         severity: 'HIGH',
         title: 'Statutory Resolution SLA Breach Timeout',
-        entityName: ent?.name || c.entityName || 'Critical Infrastructure Entity',
+        entityName: ent?.name || 'Critical Infrastructure Entity',
         entityId: c.entityId,
         caseNumber: c.caseNumber,
         caseId: c.id,
@@ -256,8 +256,8 @@ export function evaluateDynamicSupervisoryAlerts(
         ruleName: 'Critical Supervisory Finding Trigger',
         description: f.whatHappened,
         acknowledged: f.reviewStatus !== 'PENDING',
-        statutoryMandate: f.regulatoryImpact,
-        evidenceSummary: f.whyItMatters,
+        statutoryMandate: f.counterfactual || 'ISO 19011 Clause 6.4 Oversight',
+        evidenceSummary: f.whyFlagged,
         metricValue: `Risk: ${f.priorityScore}`
       });
     }

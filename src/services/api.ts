@@ -11,7 +11,13 @@ import {
   SmartSampleRecommendation,
   SOCBehaviourFingerprint,
   AssessmentTimeline,
-  ExaminerFeedbackRecord
+  ExaminerFeedbackRecord,
+  DynamicSupervisoryAlert,
+  DynamicPolicyRule,
+  EnterpriseEngineDefinition,
+  PasswordResetChallenge,
+  PasswordResetVerificationResult,
+  PasswordResetExecutionResult
 } from '../types';
 
 class ApiService {
@@ -60,13 +66,23 @@ class ApiService {
   }
 
   // Auth
-  public async login(email: string, password: string) {
+  public async login(usernameOrEmail: string, password: string) {
     const data = await this.request<{ token: string; user: any }>('/auth/login', {
       method: 'POST',
-      body: JSON.stringify({ email, password })
+      body: JSON.stringify({ username: usernameOrEmail, password })
     });
     this.setToken(data.token);
     return data;
+  }
+
+  public async logout() {
+    try {
+      await this.request('/auth/logout', { method: 'POST' });
+    } catch {
+      // Ignore network errors during logout
+    } finally {
+      this.setToken(null);
+    }
   }
 
   public async getMe() {
@@ -75,6 +91,31 @@ class ApiService {
 
   public async getUsers() {
     return this.request<{ users: any[] }>('/auth/users');
+  }
+
+  public async requestPasswordReset(identifier: string): Promise<PasswordResetChallenge> {
+    return this.request<PasswordResetChallenge>('/auth/forgot-password', {
+      method: 'POST',
+      body: JSON.stringify({ identifier })
+    });
+  }
+
+  public async verifyResetCode(resetToken: string, code: string): Promise<PasswordResetVerificationResult> {
+    return this.request<PasswordResetVerificationResult>('/auth/verify-reset-code', {
+      method: 'POST',
+      body: JSON.stringify({ resetToken, code })
+    });
+  }
+
+  public async resetPassword(
+    resetToken: string,
+    newPassword: string,
+    confirmPassword: string
+  ): Promise<PasswordResetExecutionResult> {
+    return this.request<PasswordResetExecutionResult>('/auth/reset-password', {
+      method: 'POST',
+      body: JSON.stringify({ resetToken, newPassword, confirmPassword })
+    });
   }
 
   // Analytics

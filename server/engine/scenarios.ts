@@ -6,7 +6,8 @@ import {
   Escalation,
   Closure,
   EvidenceRecord,
-  ScenarioDefinition
+  ScenarioDefinition,
+  Asset
 } from '../types';
 
 export interface ScenarioDataset {
@@ -18,6 +19,7 @@ export interface ScenarioDataset {
   escalations: Escalation[];
   closures: Closure[];
   evidences: EvidenceRecord[];
+  assets: Asset[];
 }
 
 export const SCENARIO_DEFINITIONS: ScenarioDefinition[] = [
@@ -848,6 +850,89 @@ export function generateScenarioData(scenarioId: string): ScenarioDataset {
       break;
   }
 
+  const assets: Asset[] = [
+    {
+      id: 'AST-FIN-01',
+      entity_id: 'ENT-FIN-01',
+      hostname: 'swift-gw-01.rbi.fin.internal',
+      ip_address: '10.14.20.101',
+      asset_type: 'Core SWIFT Node',
+      criticality: 'Tier-1 Mission Critical',
+      owner_dept: 'High Value Payments Division',
+      is_in_active_inventory: true
+    },
+    {
+      id: 'AST-FIN-02',
+      entity_id: 'ENT-FIN-01',
+      hostname: 'rtgs-switch-prod.rbi.fin.internal',
+      ip_address: '10.14.20.105',
+      asset_type: 'Core Router',
+      criticality: 'Tier-1 Mission Critical',
+      owner_dept: 'Financial Settlement Infrastructure',
+      is_in_active_inventory: true
+    },
+    {
+      id: 'AST-GRID-01',
+      entity_id: 'ENT-GRID-02',
+      hostname: 'scada-rtu-01.grid.local',
+      ip_address: '192.168.100.12',
+      asset_type: 'SCADA Gateway',
+      criticality: 'Tier-1 Mission Critical',
+      owner_dept: 'Northern Substation Automation',
+      is_in_active_inventory: true
+    },
+    {
+      id: 'AST-GRID-02',
+      entity_id: 'ENT-GRID-02',
+      hostname: 'ems-core-db.grid.local',
+      ip_address: '192.168.100.25',
+      asset_type: 'Server',
+      criticality: 'Tier-1 Mission Critical',
+      owner_dept: 'Grid Operations Management',
+      is_in_active_inventory: true
+    },
+    {
+      id: 'AST-GRID-03',
+      entity_id: 'ENT-GRID-02',
+      hostname: 'shadow-plc-bridge.grid.local',
+      ip_address: '192.168.100.99',
+      asset_type: 'SCADA Gateway',
+      criticality: 'Tier-1 Mission Critical',
+      owner_dept: 'Substation Field Maintenance',
+      is_in_active_inventory: false // Unregistered asset missing from active inventory!
+    },
+    {
+      id: 'AST-HEALTH-01',
+      entity_id: 'ENT-HEALTH-03',
+      hostname: 'abha-vault-01.nha.gov.in',
+      ip_address: '172.16.4.10',
+      asset_type: 'Server',
+      criticality: 'Tier-2',
+      owner_dept: 'National Registry Operations',
+      is_in_active_inventory: true
+    },
+    {
+      id: 'AST-TRANS-01',
+      entity_id: 'ENT-TRANS-04',
+      hostname: 'atc-sig-controller.mrr.rail.internal',
+      ip_address: '10.50.8.2',
+      asset_type: 'Core Router',
+      criticality: 'Tier-1 Mission Critical',
+      owner_dept: 'Track Signaling Engineering',
+      is_in_active_inventory: true
+    },
+    {
+      id: 'AST-CIVIL-01',
+      entity_id: 'ENT-CIVIL-05',
+      hostname: 'portal-app-web01.dip.gov.in',
+      ip_address: '10.80.12.44',
+      asset_type: 'Server',
+      criticality: 'Tier-3',
+      owner_dept: 'Citizen Services Portal',
+      is_in_active_inventory: true
+    }
+  ];
+
   return {
     scenario: def,
     entities: baseEntities,
@@ -856,6 +941,7 @@ export function generateScenarioData(scenarioId: string): ScenarioDataset {
     investigations,
     escalations,
     closures,
-    evidences
+    evidences,
+    assets
   };
 }

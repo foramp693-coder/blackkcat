@@ -6,7 +6,8 @@ import {
   Closure,
   EvidenceRecord,
   Entity,
-  SupervisoryFinding
+  SupervisoryFinding,
+  Asset
 } from '../types';
 import { reconstructWorkflow } from './workflow';
 import { calculatePriorityScore, calculateExaminerPriority } from './scoring';
@@ -20,7 +21,8 @@ export function runExecutionGapRules(
   escalations: Escalation[],
   closures: Closure[],
   evidences: EvidenceRecord[],
-  entities: Entity[]
+  entities: Entity[],
+  assets: Asset[] = []
 ): SupervisoryFinding[] {
   const findings: SupervisoryFinding[] = [];
   let counter = 1;
@@ -551,6 +553,120 @@ export function runExecutionGapRules(
         reviewStatus: 'PENDING',
         createdAt: c.createdAt
       });
+    }
+  }
+
+  // -------------------------------------------------------------------------
+  // RULE 7: ASSET VISIBILITY GAP (Alert on Unmanaged / Inactive Asset)
+  // -------------------------------------------------------------------------
+  if (assets.length > 0) {
+    const inactiveAssets = new Map<string, Asset>();
+    for (const a of assets) {
+      if (!a.is_in_active_inventory) {
+        inactiveAssets.set(a.id, a);
+        inactiveAssets.set(a.hostname.toLowerCase(), a);
+        inactiveAssets.set(a.ip_address, a);
+      }
+    }
+
+    for (const alert of alerts) {
+      const targetHost = alert.target_host?.toLowerCase() || '';
+      const targetIp = alert.target_ip || '';
+      const assetId = alert.assetId || '';
+
+      const matchedInactive = inactiveAssets.get(assetId) ||
+        (targetHost ? inactiveAssets.get(targetHost) : undefined) ||
+        (targetIp ? inactiveAssets.get(targetIp) : undefined);
+
+      if (matchedInactive) {
+        const entity = entityMap.get(alert.entityId) || entities[0];
+        const matchingCase = cases.find(c => c.alertId === alert.id);
+
+        findings.push({
+          id: `FIND-ASSET-${String(counter++).padStart(4, '0')}`,
+          entityId: entity.id,
+          entityName: entity.name,
+          caseId: matchingCase?.id || `CASE-AST-${alert.id}`,
+          caseNumber: matchingCase?.caseNumber || `AST-${alert.id}`,
+          title: `Asset Visibility Gap: Alert on Unmanaged Endpoint [${alert.severity}]`,
+          category: 'Negative Space',
+          severity: alert.severity === 'CRITICAL' ? 'CRITICAL' : 'HIGH',
+          priorityScore: 84.0,
+          priorityLevel: 'CRITICAL',
+          examinerPriority: {
+            totalScore: 84.0,
+            priorityLevel: 'CRITICAL',
+            severity: alert.severity,
+            confidence: 94,
+            evidenceQuality: 'HIGH',
+            dataCompleteness: 90,
+            supportingRecordCount: 2,
+            detectionRuleId: 'GAP_RULE_ASSET_VISIBILITY',
+            expectedBehaviour: 'All security alerts must correspond to registered, active assets within authorized CMDB.',
+            observedBehaviour: `Alert generated for ${matchedInactive.hostname} (${matchedInactive.ip_address}) which is flagged as absent or inactive in CMDB.`,
+            missingEvidenceDesc: 'Active CMDB Asset Registration & Owner Attestation record missing.',
+            recommendedAction: 'Mandate immediate host isolation, verify asset ownership with departmental custodian, and enroll device in monitored asset registry.',
+            alternativeExplanations: ['Asset newly provisioned but CMDB synchronization batch delayed.', 'Shadow IT / unauthorized network node deployed.'],
+            scoreReasons: [
+              { label: 'Unmanaged Asset Exposure', points: 30, evidenceRef: `Asset ID: ${matchedInactive.id}` },
+              { label: 'High Alert Severity', points: 25, evidenceRef: `Alert ID: ${alert.id}` },
+              { label: 'Entity Criticality', points: 29, evidenceRef: `Entity: ${entity.code}` }
+            ]
+          },
+          scoreExplanation: {
+            baseScore: 84.0,
+            contributors: {
+              severity: 25,
+              workflowImpact: 15,
+              missingEvidence: 20,
+              slaImpact: 0,
+              entityCriticality: 15,
+              statisticalAbnormality: 9
+            },
+            totalScore: 84.0
+          },
+          whatHappened: `Security alert "${alert.title}" generated against endpoint "${matchedInactive.hostname}" (${matchedInactive.ip_address}), which is absent from active enterprise asset inventory.`,
+          whyFlagged: 'Statutory SOC supervisory requirement mandates complete inventory coverage. Alerts on unmanaged assets present critical blind spots.',
+          expectedWorkflow: ['Asset Ingestion', 'Active CMDB Enrollment', 'SIEM Correlation', 'Case Investigation'],
+          observedWorkflow: ['SIEM Alert Generated', 'Asset Inventory Lookup: MISSING/INACTIVE', 'Supervisory Exception'],
+          supportingEvidence: [
+            {
+              recordId: alert.id,
+              type: 'ALERT_RECORD',
+              description: `Alert: ${alert.title} on host ${matchedInactive.hostname}`,
+              timestamp: alert.rawTimestamp || new Date().toISOString()
+            },
+            {
+              recordId: matchedInactive.id,
+              type: 'ASSET_RECORD',
+              description: `CMDB status: Inactive / Unregistered (${matchedInactive.asset_type})`,
+              timestamp: new Date().toISOString()
+            }
+          ],
+          missingEvidence: [
+            {
+              expectedType: 'Active CMDB Registration Record',
+              description: 'Authorized asset registry entry and departmental custodian attestation.',
+              impact: 'Impossible to verify patch posture or data classification without active registration.'
+            }
+          ],
+          evidenceStrength: 'DEFINITIVE',
+          evidenceQuality: 'HIGH',
+          confidence: 94,
+          dataCompleteness: 90,
+          detectionRuleId: 'GAP_RULE_ASSET_VISIBILITY',
+          alternativeExplanations: [
+            'Transient test device deployed during maintenance window.',
+            'Shadow IT installation bypassing IT procurement.'
+          ],
+          historicalOccurrences: 1,
+          recommendedAction: 'Conduct physical asset verification, verify network port authorization, and formally enroll device into SOC telemetry pipeline.',
+          counterfactual: 'Had this asset been validated in the active CMDB repository, this supervisory finding would not have been raised.',
+          source: 'Negative Space',
+          reviewStatus: 'PENDING',
+          createdAt: alert.rawTimestamp || new Date().toISOString()
+        });
+      }
     }
   }
 

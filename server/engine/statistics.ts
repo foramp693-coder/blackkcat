@@ -19,7 +19,10 @@ export interface OperationalTrendPoint {
 export interface StatisticalAnalysisSummary {
   durations: {
     avgInvestigationMinutes: number;
+    meanInvestigationMinutes?: number;
     medianInvestigationMinutes: number;
+    p90InvestigationMinutes?: number;
+    p99InvestigationMinutes?: number;
     avgCaseResolutionMinutes: number;
     avgEscalationDelayMinutes: number;
   };
@@ -30,6 +33,7 @@ export interface StatisticalAnalysisSummary {
     breachRatePercentage: number;
   };
   analystWorkloads: { analyst: string; caseCount: number; openCases: number }[];
+  analystWorkload?: { analyst: string; caseCount: number; openCases: number }[];
   entityRankings: { entityId: string; entityName: string; priorityScore: number; findingCount: number; criticalCount: number }[];
   trends: OperationalTrendPoint[];
 }
@@ -48,6 +52,8 @@ export function calculateStatistics(
   
   const sortedDur = [...invDurations].sort((a, b) => a - b);
   const medianInv = sortedDur.length > 0 ? sortedDur[Math.floor(sortedDur.length / 2)] : 0;
+  const p90Inv = sortedDur.length > 0 ? sortedDur[Math.min(sortedDur.length - 1, Math.floor(sortedDur.length * 0.9))] : Math.round(avgInv * 1.5);
+  const p99Inv = sortedDur.length > 0 ? sortedDur[Math.min(sortedDur.length - 1, Math.floor(sortedDur.length * 0.99))] : Math.round(avgInv * 2.2);
 
   const caseDurations = cases
     .map(c => c.slaActualMinutes || (c.closedAt ? Math.round((new Date(c.closedAt).getTime() - new Date(c.createdAt).getTime()) / 60000) : 0))
@@ -152,7 +158,10 @@ export function calculateStatistics(
   return {
     durations: {
       avgInvestigationMinutes: avgInv,
+      meanInvestigationMinutes: avgInv,
       medianInvestigationMinutes: medianInv,
+      p90InvestigationMinutes: p90Inv,
+      p99InvestigationMinutes: p99Inv,
       avgCaseResolutionMinutes: avgCase,
       avgEscalationDelayMinutes: avgEsc
     },
@@ -163,6 +172,7 @@ export function calculateStatistics(
       breachRatePercentage: slaBreachRate
     },
     analystWorkloads,
+    analystWorkload: analystWorkloads,
     entityRankings,
     trends
   };

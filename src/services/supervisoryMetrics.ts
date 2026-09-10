@@ -203,24 +203,25 @@ export function generateStratifiedAuditSample(
  * Pillar (iii): Compute Cyber Resilience Scorecard & Detect Systemic Weaknesses
  */
 export function calculateCyberResilienceScorecard(
-  findings: SupervisoryFinding[]
+  findings?: SupervisoryFinding[]
 ): CyberResilienceScorecard {
-  const totalFindings = findings.length;
+  const safeFindings = Array.isArray(findings) ? findings : [];
+  const totalFindings = safeFindings.length;
 
-  const missingEscalations = findings.filter(
-    f => f.category === 'Execution Gap' || f.whyFlagged.toLowerCase().includes('escalation')
+  const missingEscalations = safeFindings.filter(
+    f => f.category === 'Execution Gap' || (f.whyFlagged && f.whyFlagged.toLowerCase().includes('escalation'))
   ).length;
 
-  const missingEvidence = findings.filter(
-    f => f.category === 'Missing Evidence' || f.missingEvidence.length > 0
+  const missingEvidence = safeFindings.filter(
+    f => f.category === 'Missing Evidence' || (Array.isArray(f.missingEvidence) && f.missingEvidence.length > 0)
   ).length;
 
-  const slaBreaches = findings.filter(
-    f => f.category === 'SLA Breach' || f.scoreExplanation?.contributors?.slaImpact > 0
+  const slaBreaches = safeFindings.filter(
+    f => f.category === 'SLA Breach' || ((f.scoreExplanation?.contributors?.slaImpact ?? 0) > 0)
   ).length;
 
-  const prematureClosures = findings.filter(
-    f => f.category === 'Premature Closure' || f.whyFlagged.toLowerCase().includes('closure')
+  const prematureClosures = safeFindings.filter(
+    f => f.category === 'Premature Closure' || (f.whyFlagged && f.whyFlagged.toLowerCase().includes('closure'))
   ).length;
 
   // Ratios (Inverse of breach rates)

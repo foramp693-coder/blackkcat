@@ -11,15 +11,41 @@ export type FindingCategory =
 
 export type ReviewStatus = 'PENDING' | 'CONFIRMED' | 'REJECTED' | 'NEEDS_EVIDENCE';
 export type UserRole = 'Lead Examiner' | 'SOC Supervisor' | 'Auditor';
+export type AccessLevel = 'L1' | 'L2' | 'L3';
+
+export const PERMISSIONS = {
+  VIEW_ALL: 'view:all',
+  VIEW_OPERATIONAL: 'operational:view',
+  RUN_ANALYTICS: 'run:analytics',
+  INGEST_DATA: 'ingest:data',
+  REVIEW_FINDINGS: 'review:findings',
+  ACKNOWLEDGE_FINDINGS: 'findings:acknowledge',
+  ADD_NOTES: 'notes:add',
+  MODIFY_RULES: 'rules:modify',
+  VIEW_AUDIT_FULL: 'audit:view_full',
+  VIEW_AUDIT_LIMITED: 'audit:view_limited',
+  GENERATE_REPORTS: 'report:generate',
+  LOAD_SCENARIOS: 'scenarios:load',
+  INVESTIGATE_CASES: 'cases:investigate',
+  INSPECT_EVIDENCE: 'evidence:inspect',
+  INSPECT_WORKFLOW: 'workflow:inspect'
+} as const;
 
 export interface User {
   id: string;
+  username: string;
   email: string;
   name: string;
   role: UserRole;
+  accessLevel: AccessLevel;
   passwordHash: string;
   organization: string;
+  badgeNumber?: string;
+  permissions: string[];
+  active: boolean;
   createdAt: string;
+  lastLogin?: string;
+  assignedEntities?: string[];
 }
 
 export interface Entity {
@@ -27,7 +53,19 @@ export interface Entity {
   name: string;
   code: string;
   criticality: 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
+  criticality_tier?: 'Tier-1 Mission Critical' | 'Tier-2' | 'Tier-3' | string;
   sector: string;
+  soc_contact?: string;
+  assessment_period?: string;
+  status?: string;
+  assessment_start?: string;
+  assessment_end?: string;
+  resilience_score?: number;
+  total_alerts?: number;
+  total_cases?: number;
+  total_findings?: number;
+  last_analytics_run?: string;
+  created_at?: string;
   activeCases: number;
   totalFindings: number;
   slaBreachRate: number;
@@ -37,15 +75,24 @@ export interface Entity {
 export interface Alert {
   id: string;
   entityId: string;
-  assetId: string;
+  assetId?: string;
   title: string;
   severity: SeverityLevel;
   source: string;
   rawTimestamp: string;
   normalizedTimestamp: string;
+  timestamp?: string;
   category: string;
   description: string;
   status: 'NEW' | 'TRIAGED' | 'ESCALATED' | 'DISMISSED';
+  target_host?: string;
+  target_ip?: string;
+  analyst_id?: string;
+  triage_duration_sec?: number;
+  summary?: string;
+  created_at?: string;
+  raw_source?: string;
+  event_reference?: string;
 }
 
 export interface Case {
@@ -55,15 +102,72 @@ export interface Case {
   entityId: string;
   title: string;
   severity: SeverityLevel;
+  priority?: string;
   status: 'OPEN' | 'IN_INVESTIGATION' | 'ESCALATED' | 'CLOSED' | 'REOPENED';
   assignedAnalyst: string;
+  owner_analyst?: string;
   createdAt: string;
   acknowledgedAt?: string;
+  assigned_at?: string;
   closedAt?: string;
+  closed_at?: string;
   slaTargetMinutes: number;
+  sla_target_minutes?: number;
   slaActualMinutes?: number;
   slaBreached: boolean;
+  sla_breached?: boolean;
+  escalation_flag?: boolean;
   closureReason?: string;
+  created_by?: string;
+}
+
+export interface Asset {
+  id: string;
+  entity_id: string;
+  hostname: string;
+  ip_address: string;
+  asset_type: 'SCADA Gateway' | 'Core SWIFT Node' | 'Core Router' | 'Workstation' | 'Server' | string;
+  criticality: 'Tier-1 Mission Critical' | 'Tier-2' | 'Tier-3' | string;
+  owner_dept: string;
+  is_in_active_inventory: boolean;
+}
+
+export interface IngestionBatch {
+  id: string;
+  filename: string;
+  dataset_type: string;
+  uploaded_by: string;
+  uploaded_at: string;
+  record_count: number;
+  valid_count: number;
+  invalid_count: number;
+  status: 'VALIDATING' | 'VALID' | 'IMPORTED' | 'FAILED' | 'ROLLED_BACK';
+  error_summary?: string;
+  assessment_period: string;
+}
+
+export interface AnalyticsRunRecord {
+  id: string;
+  started_at: string;
+  completed_at?: string;
+  executed_by: string;
+  entity_id?: string;
+  records_analyzed: number;
+  workflows_analyzed: number;
+  findings_generated: number;
+  status: 'STARTED' | 'COMPLETED' | 'FAILED';
+  error_summary?: string;
+}
+
+export interface FindingReviewRecord {
+  id: string;
+  finding_id: string;
+  reviewer_username: string;
+  reviewer_role: string;
+  previous_status: string;
+  new_status: string;
+  notes?: string;
+  created_at: string;
 }
 
 export interface Investigation {
@@ -73,9 +177,15 @@ export interface Investigation {
   analyst?: string;
   startedAt: string;
   completedAt?: string;
+  start_time?: string;
+  end_time?: string;
   durationMinutes?: number;
   hypothesis: string;
   evidenceIds: string[];
+  evidence_types_json?: string;
+  hash_artifacts?: string;
+  containment_action_logged?: boolean;
+  investigation_notes?: string;
   findingsNotes: string;
   notes?: string;
   status: 'IN_PROGRESS' | 'COMPLETED' | 'SUSPENDED';
@@ -87,6 +197,9 @@ export interface Escalation {
   escalatedBy: string;
   escalatedTo: string;
   escalatedAt: string;
+  escalation_timestamp?: string;
+  ack_timestamp?: string;
+  justification?: string;
   delayMinutesFromAlert: number;
   escalationReason: string;
   priority: SeverityLevel;
@@ -108,9 +221,16 @@ export interface EvidenceRecord {
 export interface Closure {
   id: string;
   caseId: string;
+  alert_id?: string;
   closedBy: string;
   closedAt: string;
+  closed_at?: string;
+  closed_by?: string;
   classification: 'TRUE_POSITIVE' | 'FALSE_POSITIVE' | 'BENIGN_TRUE_POSITIVE' | 'INCONCLUSIVE';
+  resolution_type?: string;
+  root_cause_summary?: string;
+  supervisory_signoff?: boolean;
+  duration_minutes?: number;
   justification: string;
   approvedBySupervisor: boolean;
   rootCauseCategory?: string;
@@ -310,6 +430,9 @@ export interface SupervisoryFinding {
     featureContributions: { feature: string; deviation: string }[];
   };
   reviewStatus: ReviewStatus;
+  examiner_notes?: string;
+  reviewed_by?: string;
+  reviewed_at?: string;
   reviewDecision?: {
     decision: ReviewStatus;
     reviewerId: string;
@@ -344,15 +467,45 @@ export interface AuditEvent {
   action:
     | 'LOGIN'
     | 'LOGOUT'
+    | 'LOGIN_SUCCESS'
+    | 'LOGIN_FAILURE'
+    | 'ACCESS_DENIED'
+    | 'UNAUTHENTICATED_ACCESS_ATTEMPT'
+    | 'PASSWORD_RESET_REQUESTED'
+    | 'PASSWORD_RESET_VERIFIED'
+    | 'PASSWORD_RESET_COMPLETED'
+    | 'PASSWORD_RESET_FAILED'
     | 'FINDING_VIEWED'
     | 'FINDING_REVIEWED'
+    | 'FINDING_CONFIRMED'
+    | 'FINDING_ACKNOWLEDGED'
     | 'REPORT_GENERATED'
     | 'DATA_UPLOAD'
+    | 'DATA_INGESTED'
     | 'ANALYTICS_EXECUTED'
+    | 'ANALYTICS_ENGINE_EXECUTED'
     | 'SCENARIO_SWITCHED'
-    | 'ADMIN_ACTION';
+    | 'SCENARIO_LOADED'
+    | 'ADMIN_ACTION'
+    | 'POLICY_RULE_MODIFIED'
+    | 'SUPERVISORY_ALERT_ACKNOWLEDGED';
   timestamp: string;
-  targetType: 'FINDING' | 'CASE' | 'REPORT' | 'DATASET' | 'AUTH' | 'SCENARIO';
+  targetType:
+    | 'FINDING'
+    | 'CASE'
+    | 'REPORT'
+    | 'DATASET'
+    | 'AUTH'
+    | 'SCENARIO'
+    | 'SYSTEM_STATE'
+    | 'EVIDENCE'
+    | 'AUDIT_LOG_IMMUTABILITY'
+    | 'ALERT'
+    | 'POLICY_RULE'
+    | 'ENGINE'
+    | 'API'
+    | 'API_ROLE_CHECK'
+    | 'API_PERMISSION_CHECK';
   targetId: string;
   metadata: Record<string, any>;
 }
@@ -368,6 +521,7 @@ export interface KPISummary {
   slaBreachRate: number; // percentage
   reviewedFindingsCount: number;
   pendingReviewCount: number;
+  socHealthScore?: number;
 }
 
 export interface ScenarioDefinition {

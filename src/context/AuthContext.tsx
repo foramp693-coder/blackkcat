@@ -1,21 +1,61 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
-import { User, UserRole } from '../types';
+import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import { User, UserRole, AccessLevel, PERMISSIONS } from '../types';
 import { api } from '../services/api';
+
+export interface PresetDemoAccount {
+  username: string;
+  email: string;
+  pass: string;
+  name: string;
+  role: UserRole;
+  accessLevel: AccessLevel;
+  organization: string;
+  description: string;
+}
+
+export const PRESET_ACCOUNTS: PresetDemoAccount[] = [
+  {
+    username: 'lead.examiner',
+    email: 'examiner@satsa.gov.in',
+    pass: 'examiner123',
+    name: 'Dr. Arunima Sen',
+    role: 'Lead Examiner',
+    accessLevel: 'L3',
+    organization: 'National Supervisory Audit Bureau',
+    description: 'Full supervisory authority: analytics rule modification, decision confirmations, synthetic injection, executive dossiers.'
+  },
+  {
+    username: 'soc.supervisor',
+    email: 'supervisor@soc.internal',
+    pass: 'supervisor123',
+    name: 'Rajeev Menon',
+    role: 'SOC Supervisor',
+    accessLevel: 'L2',
+    organization: 'Critical Sector Central SOC',
+    description: 'Operational lead: investigates findings, provides operational justifications/acknowledgments, uploads raw datasets.'
+  },
+  {
+    username: 'auditor',
+    email: 'auditor@cert.gov.in',
+    pass: 'auditor123',
+    name: 'Sunita Rao',
+    role: 'Auditor',
+    accessLevel: 'L1',
+    organization: 'CERT-In Supervisory Review Group',
+    description: 'Independent oversight: read-only statutory audit trail verification, compliance verification, export signed records.'
+  }
+];
 
 interface AuthContextType {
   user: User | null;
+  isAuthenticated: boolean;
   loading: boolean;
-  login: (email: string, pass: string) => Promise<void>;
-  logout: () => void;
-  switchUser: (role: UserRole) => Promise<void>;
-  presetUsers: { email: string; name: string; role: UserRole }[];
+  login: (usernameOrEmail: string, pass: string) => Promise<void>;
+  logout: () => Promise<void>;
+  hasRole: (...roles: UserRole[]) => boolean;
+  hasPermission: (permission: string) => boolean;
+  presetAccounts: PresetDemoAccount[];
 }
-
-const PRESET_ACCOUNTS: { email: string; pass: string; name: string; role: UserRole }[] = [
-  { email: 'examiner@satsa.gov.in', pass: 'examiner123', name: 'Dr. Arunima Sen', role: 'Lead Examiner' },
-  { email: 'supervisor@soc.internal', pass: 'supervisor123', name: 'Rajeev Menon', role: 'SOC Supervisor' },
-  { email: 'auditor@cert.gov.in', pass: 'auditor123', name: 'Sunita Rao', role: 'Auditor' }
-];
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
@@ -23,47 +63,74 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    async function initAuth() {
-      try {
-        const res = await api.getMe();
-        if (res.user) {
-          setUser(res.user);
-        }
-      } catch (err) {
-        console.warn('Auth init note:', err);
-      } finally {
-        setLoading(false);
-      }
+  const checkAuth = useCallback(async () => {
+    const token = api.getToken();
+    if (!token) {
+      setUser(null);
+      setLoading(false);
+      return;
     }
-    initAuth();
+
+    try {
+      const res = await api.getMe();
+      if (res.authenticated && res.user) {
+        setUser(res.user);
+      } else {
+        api.setToken(null);
+        setUser(null);
+      }
+    } catch {
+      api.setToken(null);
+      setUser(null);
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
-  const login = async (email: string, pass: string) => {
-    const res = await api.login(email, pass);
-    setUser(res.user);
+  useEffect(() => {
+    checkAuth();
+  }, [checkAuth]);
+
+  const login = async (usernameOrEmail: string, pass: string) => {
+    setLoading(true);
+    try {
+      const res = await api.login(usernameOrEmail, pass);
+      setUser(res.user);
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const logout = () => {
-    api.setToken(null);
-    // Default to read-only or unauthenticated
-    setUser(null);
+  const logout = async () => {
+    try {
+      await api.logout();
+    } finally {
+      setUser(null);
+    }
   };
 
-  const switchUser = async (role: UserRole) => {
-    const target = PRESET_ACCOUNTS.find(p => p.role === role) || PRESET_ACCOUNTS[0];
-    await login(target.email, target.pass);
+  const hasRole = (...roles: UserRole[]): boolean => {
+    if (!user) return false;
+    return roles.includes(user.role);
+  };
+
+  const hasPermission = (permission: string): boolean => {
+    if (!user) return false;
+    if (user.role === 'Lead Examiner') return true; // Lead examiner has full oversight
+    return user.permissions?.includes(permission) ?? false;
   };
 
   return (
     <AuthContext.Provider
       value={{
         user,
+        isAuthenticated: !!user,
         loading,
         login,
         logout,
-        switchUser,
-        presetUsers: PRESET_ACCOUNTS.map(a => ({ email: a.email, name: a.name, role: a.role }))
+        hasRole,
+        hasPermission,
+        presetAccounts: PRESET_ACCOUNTS
       }}
     >
       {children}

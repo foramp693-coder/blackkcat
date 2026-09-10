@@ -4,6 +4,7 @@ import { SeverityBadge } from '../common/SeverityBadge';
 import { CategoryBadge } from '../common/CategoryBadge';
 import { WorkflowDiagram } from '../common/WorkflowDiagram';
 import { useReviewDraft } from '../../hooks/useReviewDraft';
+import { useAuth } from '../../context/AuthContext';
 import { api } from '../../services/api';
 import {
   X,
@@ -24,7 +25,9 @@ import {
   BookOpen,
   GitBranch,
   BarChart2,
-  ArrowRight
+  ArrowRight,
+  Lock,
+  Info
 } from 'lucide-react';
 import { getRegulatoryFrameworkMappings, checkExaminerConsistency } from '../../services/supervisoryMetrics';
 
@@ -41,6 +44,7 @@ interface Props {
 }
 
 export const FindingDetailModal: React.FC<Props> = ({ finding, allFindings = [], onClose, onReviewSubmit }) => {
+  const { user, hasRole, hasPermission } = useAuth();
   const initialDecision: ReviewStatus =
     finding.reviewStatus !== 'PENDING' ? finding.reviewStatus : 'CONFIRMED';
   const initialNotes = finding.reviewDecision?.notes || '';
@@ -573,7 +577,7 @@ export const FindingDetailModal: React.FC<Props> = ({ finding, allFindings = [],
             </div>
           </div>
 
-          {/* Section 10: Human-in-the-Loop Review Decision */}
+            {/* Section 10: Human-in-the-Loop Review Decision */}
           <div className="rounded-xl border border-zinc-700 bg-zinc-900 p-5 space-y-4">
             <div className="flex items-center justify-between">
               <div>
@@ -599,6 +603,26 @@ export const FindingDetailModal: React.FC<Props> = ({ finding, allFindings = [],
               </span>
             </div>
 
+            {/* Auditor Read-Only Notice */}
+            {user?.role === 'Auditor' && (
+              <div className="flex items-center gap-2 p-3 rounded-lg bg-emerald-950/40 border border-emerald-800/60 text-xs text-emerald-300">
+                <Lock className="w-4 h-4 text-emerald-400 shrink-0" />
+                <span>
+                  <strong>Auditor Read-Only Clearance:</strong> You are reviewing this finding with independent oversight permissions. Direct decision overrides and note commits are disabled.
+                </span>
+              </div>
+            )}
+
+            {/* Supervisor Scope Notice */}
+            {user?.role === 'SOC Supervisor' && (
+              <div className="flex items-center gap-2 p-3 rounded-lg bg-blue-950/40 border border-blue-800/60 text-xs text-blue-300">
+                <Info className="w-4 h-4 text-blue-400 shrink-0" />
+                <span>
+                  <strong>Supervisor Operational Scope:</strong> You can submit operational response notes and request additional log evidence. Statutory gap certification requires Lead Examiner clearance.
+                </span>
+              </div>
+            )}
+
             {/* Examiner Consistency Guardrail */}
             {consistency.totalSimilar > 0 && (
               <div className="flex items-center gap-2.5 px-3.5 py-2.5 rounded-lg bg-zinc-950 border border-zinc-700 text-xs text-zinc-300">
@@ -615,7 +639,7 @@ export const FindingDetailModal: React.FC<Props> = ({ finding, allFindings = [],
             )}
 
             {/* Draft Recovery Alert */}
-            {draftRestored && (
+            {draftRestored && user?.role !== 'Auditor' && (
               <div className="flex items-center justify-between px-3.5 py-2 rounded-lg bg-blue-950/50 border border-blue-800/80 text-xs text-blue-200">
                 <div className="flex items-center gap-2">
                   <History className="w-4 h-4 text-blue-400 flex-shrink-0" />
@@ -634,92 +658,113 @@ export const FindingDetailModal: React.FC<Props> = ({ finding, allFindings = [],
             )}
 
             {/* Decision Radio Buttons */}
-            <div className="grid grid-cols-3 gap-3">
-              <button
-                type="button"
-                onClick={() => setDecision('CONFIRMED')}
-                className={`flex items-center justify-center gap-2 p-2.5 rounded-lg border text-xs font-semibold transition ${
-                  decision === 'CONFIRMED'
-                    ? 'bg-red-950 border-red-600 text-red-200 ring-2 ring-red-500/40'
-                    : 'bg-zinc-950 border-zinc-800 text-zinc-400 hover:border-zinc-700'
-                }`}
-              >
-                <CheckCircle2 className="w-4 h-4 text-red-400" />
-                <span>Confirm Gap</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setDecision('REJECTED')}
-                className={`flex items-center justify-center gap-2 p-2.5 rounded-lg border text-xs font-semibold transition ${
-                  decision === 'REJECTED'
-                    ? 'bg-zinc-800 border-zinc-600 text-zinc-100 ring-2 ring-zinc-500/40'
-                    : 'bg-zinc-950 border-zinc-800 text-zinc-400 hover:border-zinc-700'
-                }`}
-              >
-                <XCircle className="w-4 h-4 text-zinc-400" />
-                <span>Reject / Dismiss</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setDecision('NEEDS_EVIDENCE')}
-                className={`flex items-center justify-center gap-2 p-2.5 rounded-lg border text-xs font-semibold transition ${
-                  decision === 'NEEDS_EVIDENCE'
-                    ? 'bg-amber-950 border-amber-600 text-amber-200 ring-2 ring-amber-500/40'
-                    : 'bg-zinc-950 border-zinc-800 text-zinc-400 hover:border-zinc-700'
-                }`}
-              >
-                <RotateCcw className="w-4 h-4 text-amber-400" />
-                <span>Request More Evidence</span>
-              </button>
-            </div>
-
-            {/* Notes Input */}
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <label className="text-[11px] font-semibold text-zinc-300 uppercase tracking-wider block">
-                  Examiner Review Notes & Rationale:
-                </label>
-                {lastSaved && (
-                  <div className="flex items-center gap-2 text-[10px]">
-                    <span className="inline-flex items-center gap-1.5 text-emerald-400 font-mono">
-                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
-                      Auto-saved to local draft
-                    </span>
-                    <button
-                      type="button"
-                      onClick={discardDraft}
-                      title="Clear local draft and reset notes"
-                      className="text-zinc-500 hover:text-red-400 transition underline"
-                    >
-                      Clear
-                    </button>
-                  </div>
+            {user?.role === 'Auditor' ? (
+              <div className="p-3 bg-zinc-950/80 rounded-lg border border-zinc-800 text-xs text-zinc-400 font-mono">
+                Current Recorded Decision: <span className="text-zinc-200 font-bold">{finding.reviewStatus}</span>
+                {finding.reviewDecision?.notes && (
+                  <p className="mt-1 text-zinc-300 font-sans text-xs italic">
+                    "{finding.reviewDecision.notes}"
+                  </p>
                 )}
               </div>
-              <textarea
-                value={notes}
-                onChange={e => setNotes(e.target.value)}
-                placeholder="Enter detailed supervisory review notes, justification, or interviews conducted with the SOC manager..."
-                rows={3}
-                className="w-full rounded-lg border border-zinc-800 bg-zinc-950 p-3 text-xs text-zinc-200 placeholder-zinc-600 focus:border-red-600 focus:outline-none focus:ring-1 focus:ring-red-600"
-              />
-            </div>
+            ) : (
+              <div className="grid grid-cols-3 gap-3">
+                <button
+                  type="button"
+                  disabled={user?.role === 'SOC Supervisor'}
+                  onClick={() => setDecision('CONFIRMED')}
+                  className={`flex items-center justify-center gap-2 p-2.5 rounded-lg border text-xs font-semibold transition ${
+                    decision === 'CONFIRMED'
+                      ? 'bg-red-950 border-red-600 text-red-200 ring-2 ring-red-500/40'
+                      : 'bg-zinc-950 border-zinc-800 text-zinc-400 hover:border-zinc-700'
+                  } ${user?.role === 'SOC Supervisor' ? 'opacity-40 cursor-not-allowed' : ''}`}
+                >
+                  <CheckCircle2 className="w-4 h-4 text-red-400" />
+                  <span>Confirm Gap {user?.role === 'SOC Supervisor' && '(L3)'}</span>
+                </button>
+
+                <button
+                  type="button"
+                  disabled={user?.role === 'SOC Supervisor'}
+                  onClick={() => setDecision('REJECTED')}
+                  className={`flex items-center justify-center gap-2 p-2.5 rounded-lg border text-xs font-semibold transition ${
+                    decision === 'REJECTED'
+                      ? 'bg-zinc-800 border-zinc-600 text-zinc-100 ring-2 ring-zinc-500/40'
+                      : 'bg-zinc-950 border-zinc-800 text-zinc-400 hover:border-zinc-700'
+                  } ${user?.role === 'SOC Supervisor' ? 'opacity-40 cursor-not-allowed' : ''}`}
+                >
+                  <XCircle className="w-4 h-4 text-zinc-400" />
+                  <span>Reject / Dismiss {user?.role === 'SOC Supervisor' && '(L3)'}</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setDecision('NEEDS_EVIDENCE')}
+                  className={`flex items-center justify-center gap-2 p-2.5 rounded-lg border text-xs font-semibold transition ${
+                    decision === 'NEEDS_EVIDENCE'
+                      ? 'bg-amber-950 border-amber-600 text-amber-200 ring-2 ring-amber-500/40'
+                      : 'bg-zinc-950 border-zinc-800 text-zinc-400 hover:border-zinc-700'
+                  }`}
+                >
+                  <RotateCcw className="w-4 h-4 text-amber-400" />
+                  <span>Request More Evidence</span>
+                </button>
+              </div>
+            )}
+
+            {/* Notes Input */}
+            {user?.role !== 'Auditor' && (
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <label className="text-[11px] font-semibold text-zinc-300 uppercase tracking-wider block">
+                    {user?.role === 'SOC Supervisor' ? 'Operational Response & Justification Notes:' : 'Examiner Review Notes & Rationale:'}
+                  </label>
+                  {lastSaved && (
+                    <div className="flex items-center gap-2 text-[10px]">
+                      <span className="inline-flex items-center gap-1.5 text-emerald-400 font-mono">
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                        Auto-saved to local draft
+                      </span>
+                      <button
+                        type="button"
+                        onClick={discardDraft}
+                        title="Clear local draft and reset notes"
+                        className="text-zinc-500 hover:text-red-400 transition underline"
+                      >
+                        Clear
+                      </button>
+                    </div>
+                  )}
+                </div>
+                <textarea
+                  value={notes}
+                  onChange={e => setNotes(e.target.value)}
+                  placeholder={
+                    user?.role === 'SOC Supervisor'
+                      ? 'Enter operational response, mitigation steps taken, or explain delay...'
+                      : 'Enter detailed supervisory review notes, justification, or interviews conducted with the SOC manager...'
+                  }
+                  rows={3}
+                  className="w-full rounded-lg border border-zinc-800 bg-zinc-950 p-3 text-xs text-zinc-200 placeholder-zinc-600 focus:border-red-600 focus:outline-none focus:ring-1 focus:ring-red-600"
+                />
+              </div>
+            )}
 
             {/* Follow-up recommendation */}
-            <div className="space-y-2">
-              <label className="text-[11px] font-semibold text-zinc-300 uppercase tracking-wider block">
-                Recommended Follow-up Action / Directive:
-              </label>
-              <input
-                type="text"
-                value={followUp}
-                onChange={e => setFollowUp(e.target.value)}
-                placeholder="e.g., Issue 14-day rectification notice to SOC Lead for missing escalation logs"
-                className="w-full rounded-lg border border-zinc-800 bg-zinc-950 px-3 py-2 text-xs text-zinc-200 placeholder-zinc-600 focus:border-red-600 focus:outline-none focus:ring-1 focus:ring-red-600"
-              />
-            </div>
+            {user?.role !== 'Auditor' && (
+              <div className="space-y-2">
+                <label className="text-[11px] font-semibold text-zinc-300 uppercase tracking-wider block">
+                  {user?.role === 'SOC Supervisor' ? 'Proposed Remediation Action:' : 'Recommended Follow-up Action / Directive:'}
+                </label>
+                <input
+                  type="text"
+                  value={followUp}
+                  onChange={e => setFollowUp(e.target.value)}
+                  placeholder="e.g., Issue 14-day rectification notice to SOC Lead for missing escalation logs"
+                  className="w-full rounded-lg border border-zinc-800 bg-zinc-950 px-3 py-2 text-xs text-zinc-200 placeholder-zinc-600 focus:border-red-600 focus:outline-none focus:ring-1 focus:ring-red-600"
+                />
+              </div>
+            )}
 
             {/* Submit Action */}
             <div className="flex items-center justify-between pt-2">
@@ -729,7 +774,7 @@ export const FindingDetailModal: React.FC<Props> = ({ finding, allFindings = [],
                 </span>
               ) : (
                 <span className="text-[11px] text-zinc-500 font-mono">
-                  Recorded with reviewer credentials & timestamp
+                  User: {user?.name} ({user?.accessLevel})
                 </span>
               )}
 
@@ -749,14 +794,24 @@ export const FindingDetailModal: React.FC<Props> = ({ finding, allFindings = [],
                 >
                   Close
                 </button>
-                <button
-                  type="button"
-                  disabled={isSubmitting}
-                  onClick={handleSubmit}
-                  className="px-5 py-2 rounded-lg bg-red-800 hover:bg-red-700 text-white font-semibold text-xs transition shadow-md disabled:opacity-50"
-                >
-                  {isSubmitting ? 'Recording...' : 'Commit Examiner Decision'}
-                </button>
+                {user?.role !== 'Auditor' && (
+                  <button
+                    type="button"
+                    disabled={isSubmitting}
+                    onClick={handleSubmit}
+                    className={`px-5 py-2 rounded-lg font-semibold text-xs transition shadow-md disabled:opacity-50 text-white ${
+                      user?.role === 'SOC Supervisor'
+                        ? 'bg-blue-600 hover:bg-blue-500'
+                        : 'bg-red-800 hover:bg-red-700'
+                    }`}
+                  >
+                    {isSubmitting
+                      ? 'Recording...'
+                      : user?.role === 'SOC Supervisor'
+                      ? 'Submit Operational Response'
+                      : 'Commit Examiner Decision'}
+                  </button>
+                )}
               </div>
             </div>
           </div>

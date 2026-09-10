@@ -2,6 +2,11 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { Navbar } from './components/layout/Navbar';
 import { Sidebar, NavTab } from './components/layout/Sidebar';
+import { LoginPage } from './components/auth/LoginPage';
+import { AccessDeniedPage } from './components/auth/AccessDeniedPage';
+import { LeadExaminerDashboard } from './components/views/dashboards/LeadExaminerDashboard';
+import { SOCSupervisorDashboard } from './components/views/dashboards/SOCSupervisorDashboard';
+import { AuditorDashboard } from './components/views/dashboards/AuditorDashboard';
 import { DashboardView } from './components/views/DashboardView';
 import { NegativeSpaceView } from './components/views/NegativeSpaceView';
 import { FindingsView } from './components/views/FindingsView';
@@ -44,6 +49,7 @@ import {
 } from './types';
 
 export const AppContent: React.FC = () => {
+  const { user, isAuthenticated, loading: authLoading, logout, hasRole } = useAuth();
   const [activeTab, setActiveTab] = useState<NavTab>('dashboard');
   const [activeScenarioId, setActiveScenarioId] = useState<string>('scenario-2');
   const [scenarios, setScenarios] = useState<ScenarioDefinition[]>([]);
@@ -64,6 +70,7 @@ export const AppContent: React.FC = () => {
   const [findingCategoryFilter, setFindingCategoryFilter] = useState<string>('ALL');
   const [findingSeverityFilter, setFindingSeverityFilter] = useState<string>('ALL');
   const [findingEntityFilter, setFindingEntityFilter] = useState<string>('ALL');
+  const [leadExaminerViewMode, setLeadExaminerViewMode] = useState<'overview' | 'deep_analytics'>('overview');
 
   const [loading, setLoading] = useState<boolean>(true);
 
@@ -105,34 +112,36 @@ export const AppContent: React.FC = () => {
       setTrends(trendRes);
       setEntityRankings(rankRes);
       setNegativeSpaceMatrix(matrixRes);
-      setFindings(findingsRes.findings);
+      setFindings(Array.isArray(findingsRes) ? findingsRes : findingsRes.findings || []);
       setEntities(entitiesRes);
       setCorrelations(corrRes);
     } catch (err) {
-      console.error('Failed to load application data:', err);
+      console.error('Failed to load initial dataset:', err);
     } finally {
       setLoading(false);
     }
   }, []);
 
   useEffect(() => {
-    refreshData();
-  }, [refreshData]);
+    if (isAuthenticated) {
+      refreshData();
+    }
+  }, [refreshData, isAuthenticated]);
 
-  // Scenario switch
+  // Scenario loading handler
   const handleSelectScenario = async (scenarioId: string) => {
     try {
       setLoading(true);
       await api.loadScenario(scenarioId);
       await refreshData();
     } catch (err) {
-      console.error('Failed to switch scenario:', err);
+      console.error('Error switching scenario:', err);
     } finally {
       setLoading(false);
     }
   };
 
-  // Review submission
+  // Human examiner review decision handler
   const handleReviewSubmit = async (
     id: string,
     decision: ReviewStatus,
@@ -175,19 +184,150 @@ export const AppContent: React.FC = () => {
     }
   };
 
-  if (loading && !kpi) {
+  // 1. Loading screen while verifying JWT session credentials
+  if (authLoading) {
     return (
-      <div className="flex h-screen w-screen items-center justify-center bg-zinc-950 text-zinc-300 font-mono text-xs">
+      <div className="flex h-screen w-screen items-center justify-center bg-slate-950 text-slate-300 font-mono text-xs">
         <div className="flex flex-col items-center gap-3">
-          <div className="h-6 w-6 animate-spin rounded-full border-2 border-red-500 border-t-transparent" />
-          <span>Booting SAT-SA Supervisory Engine (SIH26157)...</span>
+          <div className="h-8 w-8 animate-spin rounded-full border-2 border-indigo-500 border-t-transparent" />
+          <span className="text-slate-200 font-bold tracking-wider">VERIFYING SUPERVISORY CLEARANCE SESSION...</span>
+          <span className="text-[11px] text-slate-500">SIH26157 &bull; Cryptographic Clearance Authentication</span>
         </div>
       </div>
     );
   }
 
+  // 2. Unauthenticated state -> Real Login System
+  if (!isAuthenticated) {
+    return <LoginPage onLoginSuccess={() => refreshData()} />;
+  }
+
+  // 3. Initial data loading after successful login
+  if (loading && !kpi) {
+    return (
+      <div className="flex h-screen w-screen items-center justify-center bg-slate-950 text-slate-300 font-mono text-xs">
+        <div className="flex flex-col items-center gap-3">
+          <div className="h-8 w-8 animate-spin rounded-full border-2 border-indigo-500 border-t-transparent" />
+          <span className="text-slate-200 font-semibold tracking-wider">Booting SAT-SA Supervisory Engine (SIH26157)...</span>
+          <span className="text-[11px] text-slate-500">Mounting 25 Analytics Pipelines for {user?.name}</span>
+        </div>
+      </div>
+    );
+  }
+
+  // Helper to render role-specific dashboard for activeTab === 'dashboard'
+  const renderDashboardView = () => {
+    if (!kpi) return null;
+
+    if (user?.role === 'Lead Examiner') {
+      return (
+        <div className="space-y-6">
+          {/* View toggle between Lead Examiner Command and Deep Statistical Telemetry */}
+          <div className="flex items-center justify-between pb-2 border-b border-slate-800">
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setLeadExaminerViewMode('overview')}
+                className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                  leadExaminerViewMode === 'overview'
+                    ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
+                    : 'text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                Lead Examiner Command View
+              </button>
+              <button
+                onClick={() => setLeadExaminerViewMode('deep_analytics')}
+                className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                  leadExaminerViewMode === 'deep_analytics'
+                    ? 'bg-indigo-500/20 text-indigo-300 border border-indigo-500/40'
+                    : 'text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                Supervisory Analytics Matrix
+              </button>
+            </div>
+            <span className="text-xs text-slate-500 font-mono">
+              Clearance: L3 &bull; Full Statutory Authority
+            </span>
+          </div>
+
+          {leadExaminerViewMode === 'overview' ? (
+            <LeadExaminerDashboard
+              kpi={kpi}
+              findings={findings}
+              entities={entities}
+              onNavigate={(view) => setActiveTab(view as NavTab)}
+              onOpenUpload={() => setIsUploadOpen(true)}
+              onGenerateReport={() => setActiveTab('reports')}
+              onSelectFinding={setSelectedFinding}
+            />
+          ) : (
+            <DashboardView
+              kpi={kpi}
+              severityData={severityData}
+              categoryData={categoryData}
+              workflowFunnel={workflowFunnel}
+              trends={trends}
+              entityRankings={entityRankings}
+              findings={findings}
+              correlations={correlations}
+              onSelectFinding={setSelectedFinding}
+              onNavigateToCategory={navigateToCategory}
+              onNavigateToEntity={navigateToEntity}
+              onNavigateToSeverity={navigateToSeverity}
+              onNavigateToTab={(tab) => setActiveTab(tab as NavTab)}
+            />
+          )}
+        </div>
+      );
+    }
+
+    if (user?.role === 'SOC Supervisor') {
+      return (
+        <SOCSupervisorDashboard
+          kpi={kpi}
+          findings={findings}
+          entities={entities}
+          onNavigate={(view) => setActiveTab(view as NavTab)}
+          onOpenUpload={() => setIsUploadOpen(true)}
+        />
+      );
+    }
+
+    if (user?.role === 'Auditor') {
+      return (
+        <AuditorDashboard
+          kpi={kpi}
+          findings={findings}
+          entities={entities}
+          onNavigate={(view) => setActiveTab(view as NavTab)}
+          onGenerateReport={() => setActiveTab('reports')}
+        />
+      );
+    }
+
+    // Default fallback
+    return (
+      <DashboardView
+        kpi={kpi}
+        severityData={severityData}
+        categoryData={categoryData}
+        workflowFunnel={workflowFunnel}
+        trends={trends}
+        entityRankings={entityRankings}
+        findings={findings}
+        correlations={correlations}
+        onSelectFinding={setSelectedFinding}
+        onNavigateToCategory={navigateToCategory}
+        onNavigateToEntity={navigateToEntity}
+        onNavigateToSeverity={navigateToSeverity}
+        onNavigateToTab={(tab) => setActiveTab(tab as NavTab)}
+      />
+    );
+  };
+
   return (
-    <div className="flex h-screen flex-col bg-zinc-950 text-zinc-100 font-sans overflow-hidden">
+    <div className="flex h-screen flex-col bg-slate-950 text-slate-100 font-sans overflow-hidden">
       {/* Top Navbar */}
       <Navbar
         scenarios={scenarios}
@@ -207,142 +347,175 @@ export const AppContent: React.FC = () => {
         />
 
         {/* Main Content Area */}
-        <main className="flex-1 overflow-y-auto p-6 bg-zinc-900/40">
+        <main className="flex-1 overflow-y-auto p-6 bg-slate-900/30">
           <ErrorBoundary key={activeTab}>
-            {activeTab === 'dashboard' && kpi && (
-            <DashboardView
-              kpi={kpi}
-              severityData={severityData}
-              categoryData={categoryData}
-              workflowFunnel={workflowFunnel}
-              trends={trends}
-              entityRankings={entityRankings}
-              findings={findings}
-              correlations={correlations}
-              onSelectFinding={setSelectedFinding}
-              onNavigateToCategory={navigateToCategory}
-              onNavigateToEntity={navigateToEntity}
-              onNavigateToSeverity={navigateToSeverity}
-              onNavigateToTab={(tab) => setActiveTab(tab as NavTab)}
-            />
-          )}
+            {/* Dashboard View (Role-based) */}
+            {activeTab === 'dashboard' && renderDashboardView()}
 
-          {activeTab === 'smart-sample' && (
-            <SmartSamplingView
-              findings={findings}
-              onSelectFindingByCaseId={(caseId) => {
-                const f = findings.find(x => x.caseId === caseId);
-                if (f) setSelectedFinding(f);
-              }}
-            />
-          )}
+            {/* Smart Sampling (Lead Examiner only) */}
+            {activeTab === 'smart-sample' && (
+              hasRole('Lead Examiner') ? (
+                <SmartSamplingView
+                  findings={findings}
+                  onSelectFindingByCaseId={(caseId) => {
+                    const f = findings.find(x => x.caseId === caseId);
+                    if (f) setSelectedFinding(f);
+                  }}
+                />
+              ) : (
+                <AccessDeniedPage
+                  requiredRole="Lead Examiner"
+                  actionAttempted="Access to ISO 19011 Smart Sampling Engine"
+                  onReturnToDashboard={() => setActiveTab('dashboard')}
+                  onSwitchAccount={logout}
+                />
+              )
+            )}
 
-          {activeTab === 'fingerprint' && (
-            <SOCFingerprintView />
-          )}
+            {/* Negative Space Matrix (Lead Examiner only) */}
+            {activeTab === 'negative-space' && (
+              hasRole('Lead Examiner') ? (
+                <NegativeSpaceView
+                  matrix={negativeSpaceMatrix}
+                  findings={findings}
+                  onSelectFindingId={handleSelectFindingId}
+                  onOpenFindingByCase={setSelectedFinding}
+                />
+              ) : (
+                <AccessDeniedPage
+                  requiredRole="Lead Examiner"
+                  actionAttempted="Access to Signature of Failure Negative Space Matrix"
+                  onReturnToDashboard={() => setActiveTab('dashboard')}
+                  onSwitchAccount={logout}
+                />
+              )
+            )}
 
-          {activeTab === 'timeline' && (
-            <TimelineView />
-          )}
+            {/* Enterprise Engines Hub (Lead Examiner only) */}
+            {activeTab === 'enterprise-engines' && (
+              hasRole('Lead Examiner') ? (
+                <EnterpriseEnginesHubView onNavigateTab={(tab) => setActiveTab(tab)} />
+              ) : (
+                <AccessDeniedPage
+                  requiredRole="Lead Examiner"
+                  actionAttempted="Direct Enterprise Analytics Engines Hub"
+                  onReturnToDashboard={() => setActiveTab('dashboard')}
+                  onSwitchAccount={logout}
+                />
+              )
+            )}
 
-          {activeTab === 'assistant' && (
-            <ExaminerAssistantView
-              findings={findings}
-              onSelectFinding={setSelectedFinding}
-            />
-          )}
+            {/* Review Queue (Lead Examiner & SOC Supervisor) */}
+            {activeTab === 'review-queue' && (
+              hasRole('Lead Examiner', 'SOC Supervisor') ? (
+                <ReviewQueueView
+                  findings={findings}
+                  onSelectFinding={setSelectedFinding}
+                />
+              ) : (
+                <AccessDeniedPage
+                  requiredRole="Lead Examiner or SOC Supervisor"
+                  actionAttempted="Access to Human Review & Decision Queue"
+                  onReturnToDashboard={() => setActiveTab('dashboard')}
+                  onSwitchAccount={logout}
+                />
+              )
+            )}
 
-          {activeTab === 'negative-space' && (
-            <NegativeSpaceView
-              matrix={negativeSpaceMatrix}
-              findings={findings}
-              onSelectFindingId={handleSelectFindingId}
-              onOpenFindingByCase={setSelectedFinding}
-            />
-          )}
+            {/* Fingerprint View (Lead Examiner & Auditor) */}
+            {activeTab === 'fingerprint' && (
+              <SOCFingerprintView />
+            )}
 
-          {activeTab === 'findings' && (
-            <FindingsView
-              findings={findings}
-              onSelectFinding={setSelectedFinding}
-              initialCategoryFilter={findingCategoryFilter}
-              initialSeverityFilter={findingSeverityFilter}
-              initialEntityFilter={findingEntityFilter}
-            />
-          )}
+            {/* Timeline View */}
+            {activeTab === 'timeline' && (
+              <TimelineView />
+            )}
 
-          {activeTab === 'review-queue' && (
-            <ReviewQueueView
-              findings={findings}
-              onSelectFinding={setSelectedFinding}
-            />
-          )}
+            {/* Assistant View */}
+            {activeTab === 'assistant' && (
+              <ExaminerAssistantView
+                findings={findings}
+                onSelectFinding={setSelectedFinding}
+              />
+            )}
 
-          {activeTab === 'entities' && (
-            <EntitiesView
-              entities={entities}
-              allFindings={findings}
-              onSelectEntity={(entityId) => {
-                navigateToEntity(entityId);
-              }}
-              onSelectFinding={setSelectedFinding}
-            />
-          )}
+            {/* Findings View */}
+            {activeTab === 'findings' && (
+              <FindingsView
+                findings={findings}
+                onSelectFinding={setSelectedFinding}
+                initialCategoryFilter={findingCategoryFilter}
+                initialSeverityFilter={findingSeverityFilter}
+                initialEntityFilter={findingEntityFilter}
+              />
+            )}
 
-          {activeTab === 'analytics' && <AnalyticsView />}
+            {/* Entities View */}
+            {activeTab === 'entities' && (
+              <EntitiesView
+                entities={entities}
+                allFindings={findings}
+                onSelectEntity={(entityId) => {
+                  navigateToEntity(entityId);
+                }}
+                onSelectFinding={setSelectedFinding}
+              />
+            )}
 
-          {activeTab === 'reports' && <ReportsView />}
+            {/* Analytics View */}
+            {activeTab === 'analytics' && <AnalyticsView />}
 
-          {activeTab === 'audit-logs' && <AuditLogsView />}
+            {/* Reports View */}
+            {activeTab === 'reports' && <ReportsView />}
 
-          {/* 25 Enterprise Engines Hub & Direct Views */}
-          {activeTab === 'enterprise-engines' && (
-            <EnterpriseEnginesHubView onNavigateTab={(tab) => setActiveTab(tab)} />
-          )}
+            {/* Audit Logs View */}
+            {activeTab === 'audit-logs' && <AuditLogsView />}
 
-          {activeTab === 'ai-anomalies' && (
-            <AIAnomalyEngineView onSelectFinding={setSelectedFinding} />
-          )}
+            {/* Enterprise Engines */}
+            {activeTab === 'ai-anomalies' && (
+              <AIAnomalyEngineView onSelectFinding={setSelectedFinding} />
+            )}
 
-          {activeTab === 'peer-benchmarks' && (
-            <PeerBenchmarkingView onSelectEntity={navigateToEntity} />
-          )}
+            {activeTab === 'peer-benchmarks' && (
+              <PeerBenchmarkingView onSelectEntity={navigateToEntity} />
+            )}
 
-          {activeTab === 'nlp-quality' && (
-            <NLPInvestigationQualityView />
-          )}
+            {activeTab === 'nlp-quality' && (
+              <NLPInvestigationQualityView />
+            )}
 
-          {activeTab === 'knowledge-graph' && (
-            <KnowledgeGraphView onSelectFinding={setSelectedFinding} />
-          )}
+            {activeTab === 'knowledge-graph' && (
+              <KnowledgeGraphView onSelectFinding={setSelectedFinding} />
+            )}
 
-          {activeTab === 'timeline-replay' && (
-            <TimelineReplayView />
-          )}
+            {activeTab === 'timeline-replay' && (
+              <TimelineReplayView />
+            )}
 
-          {activeTab === 'soc-health' && (
-            <SOCHealthMaturityView />
-          )}
+            {activeTab === 'soc-health' && (
+              <SOCHealthMaturityView />
+            )}
 
-          {activeTab === 'mitre-matrix' && (
-            <MITREMatrixView />
-          )}
+            {activeTab === 'mitre-matrix' && (
+              <MITREMatrixView />
+            )}
 
-          {activeTab === 'digital-twin' && (
-            <DigitalTwinSimulatorView />
-          )}
+            {activeTab === 'digital-twin' && (
+              <DigitalTwinSimulatorView />
+            )}
 
-          {activeTab === 'supervisory-alerts' && (
-            <SupervisoryAlertsView />
-          )}
+            {activeTab === 'supervisory-alerts' && (
+              <SupervisoryAlertsView />
+            )}
 
-          {activeTab === 'data-validation' && (
-            <DataIngestionValidationView />
-          )}
+            {activeTab === 'data-validation' && (
+              <DataIngestionValidationView />
+            )}
 
-          {activeTab === 'process-mining' && (
-            <ProcessMiningView />
-          )}
+            {activeTab === 'process-mining' && (
+              <ProcessMiningView />
+            )}
           </ErrorBoundary>
         </main>
       </div>
@@ -357,14 +530,16 @@ export const AppContent: React.FC = () => {
         />
       )}
 
-      {/* Evidence Ingestion Modal */}
-      <DataIngestionModal
-        isOpen={isUploadOpen}
-        onClose={() => setIsUploadOpen(false)}
-        onSuccess={() => {
-          refreshData();
-        }}
-      />
+      {/* Evidence Ingestion Modal (Restricted to Lead Examiner and SOC Supervisor) */}
+      {hasRole('Lead Examiner', 'SOC Supervisor') && (
+        <DataIngestionModal
+          isOpen={isUploadOpen}
+          onClose={() => setIsUploadOpen(false)}
+          onSuccess={() => {
+            refreshData();
+          }}
+        />
+      )}
     </div>
   );
 };

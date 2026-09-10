@@ -11,13 +11,38 @@ export type FindingCategory =
 
 export type ReviewStatus = 'PENDING' | 'CONFIRMED' | 'REJECTED' | 'NEEDS_EVIDENCE';
 export type UserRole = 'Lead Examiner' | 'SOC Supervisor' | 'Auditor';
+export type AccessLevel = 'L1' | 'L2' | 'L3';
+
+export const PERMISSIONS = {
+  VIEW_ALL: 'view:all',
+  VIEW_OPERATIONAL: 'operational:view',
+  RUN_ANALYTICS: 'run:analytics',
+  INGEST_DATA: 'ingest:data',
+  REVIEW_FINDINGS: 'review:findings',
+  ACKNOWLEDGE_FINDINGS: 'findings:acknowledge',
+  ADD_NOTES: 'notes:add',
+  MODIFY_RULES: 'rules:modify',
+  VIEW_AUDIT_FULL: 'audit:view_full',
+  VIEW_AUDIT_LIMITED: 'audit:view_limited',
+  GENERATE_REPORTS: 'report:generate',
+  LOAD_SCENARIOS: 'scenarios:load',
+  INVESTIGATE_CASES: 'cases:investigate',
+  INSPECT_EVIDENCE: 'evidence:inspect',
+  INSPECT_WORKFLOW: 'workflow:inspect'
+} as const;
 
 export interface User {
   id: string;
+  username: string;
   email: string;
   name: string;
   role: UserRole;
+  accessLevel: AccessLevel;
   organization: string;
+  permissions: string[];
+  active?: boolean;
+  lastLogin?: string;
+  assignedEntities?: string[];
 }
 
 export type SupervisoryAttentionLevel = 'ACTION_REQUIRED' | 'ELEVATED_WATCH' | 'MONITORED_STABLE';
@@ -241,7 +266,10 @@ export interface KPISummary {
   slaBreachRate: number;
   reviewedFindingsCount: number;
   pendingReviewCount: number;
+  socHealthScore?: number;
 }
+
+export type Finding = SupervisoryFinding;
 
 export interface ScenarioDefinition {
   id: string;
@@ -878,5 +906,27 @@ export interface EnterpriseEngineDefinition {
     sublabel?: string;
   };
   lastRunTimestamp: string;
+}
+
+export interface PasswordResetChallenge {
+  success: boolean;
+  message: string;
+  resetToken: string;
+  maskedEmail: string;
+  expiresInSeconds: number;
+  demoOtp?: string;
+  securityNotice: string;
+}
+
+export interface PasswordResetVerificationResult {
+  success: boolean;
+  message: string;
+  verifiedToken: string;
+}
+
+export interface PasswordResetExecutionResult {
+  success: boolean;
+  message: string;
+  updatedUsername: string;
 }
 

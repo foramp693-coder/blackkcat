@@ -1,0 +1,76 @@
+# ==============================================================================
+# SAT-SA — Supervisory Analytics Tool for SOC Assessment (SIH26157)
+# Clean Two-Container Production Architecture
+#
+# Container 1: app (SAT-SA Application: React Frontend + Analytics/API Backend)
+# Container 2: db  (PostgreSQL 16 Relational Storage Engine + Persistent Volume)
+# ==============================================================================
+
+version: '3.8'
+
+services:
+  # ----------------------------------------------------------------------------
+  # CONTAINER 1: SAT-SA APPLICATION (Frontend + Backend in One Container)
+  # ----------------------------------------------------------------------------
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: satsa_app
+    restart: unless-stopped
+    ports:
+      - "${HOST_PORT:-8000}:3000"
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-satsa_user}:${POSTGRES_PASSWORD:-change_me_sih2026}@db:5432/${POSTGRES_DB:-satsa}
+      - POSTGRES_HOST=db
+      - POSTGRES_PORT=5432
+      - POSTGRES_DB=${POSTGRES_DB:-satsa}
+      - POSTGRES_USER=${POSTGRES_USER:-satsa_user}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-change_me_sih2026}
+      - JWT_SECRET=${JWT_SECRET:-satsa_supervisory_jwt_secret_key_demo_2026_sih}
+      - JWT_ALGORITHM=HS256
+      - JWT_EXPIRE_MINUTES=1440
+      - CORS_ORIGINS=${CORS_ORIGINS:-http://localhost:8000,http://127.0.0.1:8000,http://localhost:3000}
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - satsa_network
+
+  # ----------------------------------------------------------------------------
+  # CONTAINER 2: DATABASE (PostgreSQL Relational Storage Engine)
+  # ----------------------------------------------------------------------------
+  db:
+    image: postgres:16-alpine
+    container_name: satsa_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-satsa}
+      POSTGRES_USER: ${POSTGRES_USER:-satsa_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change_me_sih2026}
+      PGDATA: /var/lib/postgresql/data/pgdata
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-satsa_user} -d ${POSTGRES_DB:-satsa}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+    networks:
+      - satsa_network
+
+# ------------------------------------------------------------------------------
+# NETWORKS & VOLUMES
+# ------------------------------------------------------------------------------
+networks:
+  satsa_network:
+    driver: bridge
+    name: satsa_network
+
+volumes:
+  postgres_data:
+    driver: local
+    name: satsa_postgres_data
